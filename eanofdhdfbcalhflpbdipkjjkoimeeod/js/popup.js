@@ -326,8 +326,8 @@ $(document).ready(async function () {
 		await updateUI();
 	});
 	$searchMin.on("change", async function () {
-		const min = 1; // Changed from 15 to 1
-		const max = 999999; // Removed upper limit
+		const min = 8; // Increased minimum to 8 seconds for better reliability
+		const max = 999999;
 		let val = Number($(this).val());
 		let range = Number($searchMax.val());
 		if (isNaN(val) || val < min) {
@@ -335,14 +335,13 @@ $(document).ready(async function () {
 		} else {
 			val = Math.max(min, Math.min(max, val));
 		}
-		// Removed the automatic adjustment of max based on min
 		config.search.min = val;
 		await set(config);
 		await updateUI();
 	});
 	$searchMax.on("change", async function () {
-		const min = 1; // Changed from 30 to 1
-		const max = 999999; // Removed upper limit
+		const min = 8; // Increased minimum to 8 seconds
+		const max = 999999;
 		let val = Number($(this).val());
 		let range = Number($searchMin.val());
 		if (isNaN(val) || val < min) {
@@ -350,7 +349,10 @@ $(document).ready(async function () {
 		} else {
 			val = Math.max(min, Math.min(max, val));
 		}
-		// Removed the automatic adjustment of min based on max
+		// Ensure max is at least equal to min
+		if (val < range) {
+			val = range;
+		}
 		config.search.max = val;
 		await set(config);
 		await updateUI();
@@ -398,8 +400,8 @@ $(document).ready(async function () {
 		await updateUI();
 	});
 	$scheduleMin.on("change", async function () {
-		const min = 1; // Changed from 15 to 1
-		const max = 999999; // Removed upper limit
+		const min = 8; // Increased minimum to 8 seconds
+		const max = 999999;
 		let val = Number($(this).val());
 		let range = Number($scheduleMax.val());
 		if (isNaN(val) || val < min) {
@@ -412,14 +414,18 @@ $(document).ready(async function () {
 		await updateUI();
 	});
 	$scheduleMax.on("change", async function () {
-		const min = 1; // Changed from 30 to 1
-		const max = 999999; // Removed upper limit
+		const min = 8; // Increased minimum to 8 seconds
+		const max = 999999;
 		let val = Number($(this).val());
 		let range = Number($scheduleMin.val());
 		if (isNaN(val) || val < min) {
 			val = min;
 		} else {
 			val = Math.max(min, Math.min(max, val));
+		}
+		// Ensure max is at least equal to min
+		if (val < range) {
+			val = range;
 		}
 		config.schedule.max = val;
 		await set(config);
@@ -428,8 +434,6 @@ $(document).ready(async function () {
 	$scheduleModeA.on("click", async function () {
 		// Remove Pro key requirement
 		const mode = $(this).attr("class");
-		// $scheduleModeA.removeClass("active");
-		// $(this).addClass("active");
 		config.schedule.mode = mode;
 		const modeMap = {
 			m1: { desk: 0, mob: 0 },
@@ -531,6 +535,7 @@ $(document).ready(async function () {
 
 	$resetDevice.on("click", async function () {
 		await resetDevice();
+		await updateUI();
 		logs && log(`[DEVICE] - Device reset`, "update");
 	});
 	$clear.on("change", async function () {

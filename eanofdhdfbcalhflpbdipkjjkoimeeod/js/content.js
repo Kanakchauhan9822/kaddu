@@ -89,7 +89,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 							input.value += char;
 							input.dispatchEvent(new Event("input", { bubbles: true }));
 							await delay(
-								30 + Math.floor(Math.random() * 80),
+								50 + Math.floor(Math.random() * 100), // Increased base delay
 								true,
 							);
 						}
@@ -97,6 +97,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 						// Trigger additional events for better compatibility
 						input.dispatchEvent(new Event("change", { bubbles: true }));
 						input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+						
+						// Wait a bit more after typing
+						await delay(500 + Math.random() * 500);
 					} else {
 						sendResponse({ success: true });
 					}
@@ -126,7 +129,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					);
 					
 					if (form) {
-						await delay(500 + Math.random() * 500);
+						// Increased delay before submission
+						await delay(1000 + Math.random() * 1000);
 						
 						// Try clicking submit button first
 						if (submitButton && submitButton.offsetParent !== null) {
@@ -153,6 +157,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 							message: "Form not found",
 						});
 					}
+					break;
+				}
+
+				case "waitForPageLoad": {
+					// Wait for page to fully load and stabilize
+					await waitForPageStabilization();
+					sendResponse({ success: true });
+					break;
+				}
+
+				case "checkSearchCounted": {
+					// Check if the search was counted by looking for point indicators
+					const pointsIndicator = await checkForPointsAwarded();
+					sendResponse({ 
+						success: true, 
+						counted: pointsIndicator.counted,
+						points: pointsIndicator.points 
+					});
 					break;
 				}
 
@@ -207,4 +229,133 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function delay(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Wait for page to be fully loaded and stable
+async function waitForPageStabilization() {
+	// Wait for document ready state
+	if (document.readyState !== 'complete') {
+		await new Promise(resolve => {
+			const checkReady = () => {
+				if (document.readyState === 'complete') {
+					resolve();
+				} else {
+					setTimeout(checkReady, 100);
+				}
+			};
+			checkReady();
+		});
+	}
+
+	// Wait for search results to load
+	let attempts = 0;
+	const maxAttempts = 30; // 3 seconds max wait
+	
+	while (attempts < maxAttempts) {
+		const searchResults = document.querySelector('#b_results, .b_algo, .b_searchboxForm');
+		if (searchResults) {
+			// Additional wait to ensure content is stable
+			await delay(500);
+			break;
+		}
+		await delay(100);
+		attempts++;
+	}
+
+	// Wait for any animations or dynamic content to settle
+	await delay(1000 + Math.random() * 1000);
+}
+
+// Check if search was counted and points were awarded
+async function checkForPointsAwarded() {
+	const result = { counted: false, points: 0 };
+	
+	try {
+		// Look for Microsoft Rewards point indicators
+		const pointSelectors = [
+			'[data-bi-name="rewardsPoints"]',
+			'.rewards-points',
+			'#id_rc',
+			'.b_searchboxForm .rewards',
+			'[aria-label*="points"]',
+			'[title*="points"]'
+		];
+
+		for (const selector of pointSelectors) {
+			const element = document.querySelector(selector);
+			if (element) {
+				const text = element.textContent || element.getAttribute('aria-label') || element.getAttribute('title') || '';
+				const pointMatch = text.match(/(\d+)\s*point/i);
+				if (pointMatch) {
+					result.counted = true;
+					result.points = parseInt(pointMatch[1]);
+					console.log(`Points detected: ${result.points}`);
+					break;
+				}
+			}
+		}
+
+		// Alternative check: Look for search completion indicators
+		if (!result.counted) {
+			const completionIndicators = [
+				'.b_results',
+				'#b_results',
+				'.b_algo',
+				'.b_searchboxForm'
+			];
+
+			for (const selector of completionIndicators) {
+				if (document.querySelector(selector)) {
+					result.counted = true;
+					console.log('Search completion detected via results presence');
+					break;
+				}
+			}
+		}
+
+		// Check for rewards dashboard elements
+		if (!result.counted) {
+			const rewardsElements = document.querySelectorAll('[data-bi-name*="reward"], [class*="reward"]');
+			if (rewardsElements.length > 0) {
+				result.counted = true;
+				console.log('Rewards elements detected');
+			}
+		}
+
+	} catch (error) {
+		console.error('Error checking for points:', error);
+	}
+
+	return result;
+}
+
+// Monitor for point changes
+function monitorPointChanges() {
+	const observer = new MutationObserver((mutations) => {
+		mutations.forEach((mutation) => {
+			if (mutation.type === 'childList' || mutation.type === 'characterData') {
+				const target = mutation.target;
+				if (target.textContent && target.textContent.includes('point')) {
+					console.log('Point change detected:', target.textContent);
+				}
+			}
+		});
+	});
+
+	// Observe the entire document for point-related changes
+	observer.observe(document.body, {
+		childList: true,
+		subtree: true,
+		characterData: true
+	});
+
+	// Stop observing after 10 seconds
+	setTimeout(() => observer.disconnect(), 10000);
+}
+
+// Start monitoring when page loads
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', monitorPointChanges);
+} else {
+	monitorPointChanges();
 }
