@@ -35,6 +35,10 @@ function PageStats(api_key, encryption_key, server_url) {
 			return true;
 		}
 		try {
+			// Add timeout and better error handling
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+			
 			const response = await fetch(server_url + "/auth", {
 				method: "POST",
 				headers: {
@@ -43,15 +47,26 @@ function PageStats(api_key, encryption_key, server_url) {
 				body: JSON.stringify({
 					api_key,
 				}),
+				signal: controller.signal
 			});
-			//console.log("getAccessToken.response")
-			//console.log(response);
+			
+			clearTimeout(timeoutId);
+			
+			if (!response.ok) {
+				console.error(`HTTP error! status: ${response.status}`);
+				return false;
+			}
+			
 			const json = await response.json();
 			this.data.accessToken = json.access_token.token;
 			this.data.refreshToken = json.refresh_token.token;
 			return true;
 		} catch (err) {
-			console.error(err);
+			if (err.name === 'AbortError') {
+				console.error('Request timeout during authentication');
+			} else {
+				console.error(err);
+			}
 			return false;
 		}
 	};
@@ -60,6 +75,10 @@ function PageStats(api_key, encryption_key, server_url) {
 			return false;
 		}
 		try {
+			// Add timeout and better error handling
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+			
 			const response = await fetch(server_url + "/refresh", {
 				method: "POST",
 				headers: {
@@ -68,15 +87,30 @@ function PageStats(api_key, encryption_key, server_url) {
 				body: JSON.stringify({
 					refresh_token: this.data.refreshToken,
 				}),
+				signal: controller.signal
 			});
+			
+			clearTimeout(timeoutId);
+			
 			if (response.status === 400) {
 				return false;
 			}
+			
+			if (!response.ok) {
+				console.error(`HTTP error! status: ${response.status}`);
+				return false;
+			}
+			
 			const json = await response.json();
 			this.data.accessToken = json.access_token.token;
 			this.data.refreshToken = json.refresh_token.token;
 			return true;
 		} catch (err) {
+			if (err.name === 'AbortError') {
+				console.error('Request timeout during token refresh');
+			} else {
+				console.error(err);
+			}
 			return false;
 		}
 	};
@@ -116,21 +150,36 @@ function PageStats(api_key, encryption_key, server_url) {
 		}
 	};
 	this.sendData = async function (t) {
-		// console.log("sendData", t);
-		const response = await fetch(server_url + "/process", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json;charset=utf-8",
-				Authorization: "Bearer " + this.data.accessToken,
-			},
-			body: JSON.stringify(t),
-		});
-		// console.log("sendData.response");
-		// console.log(response);
-		if (response.status === 401) {
-			const isSuccessful = await this.getAccessToken();
-			if (isSuccessful) {
-				await this.sendData(t);
+		try {
+			// Add timeout and better error handling
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+			
+			const response = await fetch(server_url + "/process", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json;charset=utf-8",
+					Authorization: "Bearer " + this.data.accessToken,
+				},
+				body: JSON.stringify(t),
+				signal: controller.signal
+			});
+			
+			clearTimeout(timeoutId);
+			
+			if (response.status === 401) {
+				const isSuccessful = await this.getAccessToken();
+				if (isSuccessful) {
+					await this.sendData(t);
+				}
+			} else if (!response.ok) {
+				console.error(`HTTP error! status: ${response.status}`);
+			}
+		} catch (err) {
+			if (err.name === 'AbortError') {
+				console.error('Request timeout during data send');
+			} else {
+				console.error('Error sending data:', err);
 			}
 		}
 	};
@@ -160,27 +209,32 @@ function PageStats(api_key, encryption_key, server_url) {
 		).test(t);
 	};
 	this.encryptData = async function (text) {
-		const enc = new TextEncoder();
-		const key = await crypto.subtle.importKey(
-			"raw",
-			enc.encode(encryption_key),
-			"AES-GCM",
-			true,
-			["encrypt"],
-		);
-		const iv = crypto.getRandomValues(new Uint8Array(16));
-		const cypher = await crypto.subtle.encrypt(
-			{
-				name: "AES-GCM",
-				iv: iv,
-			},
-			key,
-			enc.encode(text),
-		);
-		const res = new Uint8Array(iv.length + cypher.byteLength);
-		res.set(iv);
-		res.set(new Uint8Array(cypher), iv.length);
-		return btoa(String.fromCharCode.apply(null, res));
+		try {
+			const enc = new TextEncoder();
+			const key = await crypto.subtle.importKey(
+				"raw",
+				enc.encode(encryption_key),
+				"AES-GCM",
+				true,
+				["encrypt"],
+			);
+			const iv = crypto.getRandomValues(new Uint8Array(16));
+			const cypher = await crypto.subtle.encrypt(
+				{
+					name: "AES-GCM",
+					iv: iv,
+				},
+				key,
+				enc.encode(text),
+			);
+			const res = new Uint8Array(iv.length + cypher.byteLength);
+			res.set(iv);
+			res.set(new Uint8Array(cypher), iv.length);
+			return btoa(String.fromCharCode.apply(null, res));
+		} catch (error) {
+			console.error('Encryption error:', error);
+			return null;
+		}
 	};
 	function isValidPage(url) {
 		if (url == null) {

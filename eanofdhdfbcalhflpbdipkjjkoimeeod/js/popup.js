@@ -70,16 +70,43 @@ $nav.on("click", (event) => {
 const $ad_banner_slider = $("#ad-banner-slider");
 async function handleAds() {
 	try {
+		// Add timeout and better error handling for the fetch request
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+		
 		const response = await fetch(
 			"https://buildwithkt.dev/rsa_ad_config.json?" + Date.now(),
+			{
+				signal: controller.signal,
+				method: 'GET',
+				headers: {
+					'Accept': 'application/json',
+					'Cache-Control': 'no-cache'
+				}
+			}
 		);
+		
+		clearTimeout(timeoutId);
+		
+		if (!response.ok) {
+			throw new Error(`HTTP error! status: ${response.status}`);
+		}
+		
 		const data = await response.json();
 		showAds = data.show;
 		// Always hide ads since everything is free now
 		$ad_banner_slider.hide();
 		log(`[ADS] - Ad config fetched: ${JSON.stringify(data)}`, "update");
 	} catch (error) {
-		log(`[ADS] - Error fetching ad config: ${error?.message}`, "error");
+		// Gracefully handle fetch errors
+		if (error.name === 'AbortError') {
+			log(`[ADS] - Request timeout: Failed to fetch ad config`, "warning");
+		} else {
+			log(`[ADS] - Error fetching ad config: ${error?.message}`, "warning");
+		}
+		// Default behavior when fetch fails
+		showAds = 0;
+		$ad_banner_slider.hide();
 	}
 }
 

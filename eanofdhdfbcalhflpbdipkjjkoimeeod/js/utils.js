@@ -112,7 +112,12 @@ async function verify(key, config, increment = true) {
 		logs && log("[VERIFY] - No internet connection.", "error");
 		return false;
 	}
+	
 	try {
+		// Add timeout and better error handling
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+		
 		const res = await fetch(gumroad_api + "/verify", {
 			method: "POST",
 			headers: {
@@ -123,7 +128,11 @@ async function verify(key, config, increment = true) {
 				license_key: key,
 				increment_uses_count: increment,
 			}),
+			signal: controller.signal
 		});
+		
+		clearTimeout(timeoutId);
+		
 		if (!res.ok) {
 			log(
 				`[VERIFY] - Error verifying Pro membership: ${res.status} ${res.statusText}`,
@@ -131,12 +140,15 @@ async function verify(key, config, increment = true) {
 			);
 			return false;
 		}
+		
 		const result = await res.json().catch(() => null);
 		const { purchase, success, uses } = result || {};
+		
 		if (!success) {
 			log("[VERIFY] - License key is invalid", "error");
 			return false;
 		}
+		
 		if (purchase.test && chrome.runtime.id === ext_id) {
 			await resetPro(config);
 			log(
@@ -145,9 +157,11 @@ async function verify(key, config, increment = true) {
 			);
 			return false;
 		}
+		
 		logs && log(`-----Gumroad Response-----`, "update");
 		logs && console.log(purchase);
 		logs && log(`--------------------------`, "update");
+		
 		if (purchase.disputed && !purchase.dispute_won) {
 			await resetPro(config);
 			log(
@@ -156,6 +170,7 @@ async function verify(key, config, increment = true) {
 			);
 			return false;
 		}
+		
 		if (purchase.subscription_ended_at || purchase.subscription_failed_at) {
 			await resetPro(config);
 			log(
@@ -164,6 +179,7 @@ async function verify(key, config, increment = true) {
 			);
 			return false;
 		}
+		
 		if (!increment && Number(uses) > Number(config?.pro?.seats + 1)) {
 			await resetPro(config);
 			log(
@@ -172,24 +188,35 @@ async function verify(key, config, increment = true) {
 			);
 			return false;
 		}
+		
 		if (purchase.subscription_cancelled_at) {
 			log(
 				`[VERIFY] Subscription cancelled, still active till period ends.`,
 				"warning",
 			);
 		}
+		
 		logs && log(`[VERIFY] Pro User verified successfully.`, "success");
+		
 		if (increment) {
 			config.pro.key = key;
 			config.pro.seats = uses;
 			await set(config);
 		}
+		
 		return true;
 	} catch (error) {
-		log(
-			`[VERIFY] - Error verifying Pro membership: ${error?.message}`,
-			"error",
-		);
+		if (error.name === 'AbortError') {
+			log(
+				`[VERIFY] - Request timeout: Failed to verify Pro membership`,
+				"error",
+			);
+		} else {
+			log(
+				`[VERIFY] - Error verifying Pro membership: ${error?.message}`,
+				"error",
+			);
+		}
 		return false;
 	}
 }
