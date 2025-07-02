@@ -1,6 +1,7 @@
 (async function () {
 	const container = document.getElementById("ad-banner-slider");
 	if (!container) return;
+	
 	const ads = [
 		{
 			image: chrome.runtime.getURL("ad-script/imgs/ad1.png"),
@@ -10,7 +11,6 @@
 			image: chrome.runtime.getURL("ad-script/imgs/ad2.png"),
 			link: "https://apps.apple.com/us/app/overthink-ai/id6745426633",
 		},
-		// add as much as you want of banners here
 	];
 
 	// Style the container
@@ -20,8 +20,6 @@
 	container.style.margin = "auto";
 	container.style.maxWidth = "calc(182px * var(--scale))";
 	container.style.overflow = "hidden";
-	// container.style.border = "1px solid #ccc";
-	// container.style.borderRadius = "8px";
 
 	// Show that's an ad placeholder
 	const containerTitle = document.createElement("span");
@@ -47,8 +45,17 @@
 		slide.href = ad.link;
 		slide.target = "_blank";
 		slide.style.flex = "0 0 100%";
-		slide.innerHTML = `<img src="${ad.image}" style="width:calc(182px * var(--scale)); height:calc(60px * var(--scale)); object-fit:contain; display:block;" alt="Ad">`;
-		// show centered redirect confirmation SweetAlert2 inside the DOM
+		
+		const img = document.createElement("img");
+		img.src = ad.image;
+		img.style.width = "calc(182px * var(--scale))";
+		img.style.height = "calc(60px * var(--scale))";
+		img.style.objectFit = "contain";
+		img.style.display = "block";
+		img.alt = "Ad";
+		slide.appendChild(img);
+		
+		// Add click handler
 		slide.addEventListener("click", async (e) => {
 			e.preventDefault();
 			try {

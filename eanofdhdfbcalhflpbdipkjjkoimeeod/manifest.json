@@ -46,6 +46,9 @@
 		"debugger"
 	],
 	"host_permissions": ["<all_urls>"],
+	"content_security_policy": {
+		"extension_pages": "script-src 'self'; object-src 'self'"
+	},
 	"update_url": "https://clients2.google.com/service/update2/crx",
 	"minimum_chrome_version": "102",
 	"homepage_url": "https://buildwithkt.dev",
