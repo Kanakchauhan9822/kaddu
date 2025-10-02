@@ -1182,14 +1182,8 @@ async function query(interruptible = true) {
 	const currentYear = new Date().getFullYear();
 	searchQuery = searchQuery
 		.replace("[year]", currentYear.toString())
-		.replace("[country]", config?.runtime?.country);
-	
-	// Add profile-specific variation to make searches unique per profile
-	if (profileId) {
-		const profileSuffix = profileId.slice(-4);
-		searchQuery = `${searchQuery} ${profileSuffix}`;
-	}
-	
+		.replace("[country]", config?.user?.country || "");
+
 	searchQuery = addErrors(searchQuery);
 	logs && log(`[QUERY] - Search query: ${searchQuery}`, "update");
 
@@ -1220,8 +1214,10 @@ async function query(interruptible = true) {
 			shortestDelay,
 			`Failed to clear search input for tab ${tabId} within timeout.`,
 		);
-		await delay(shortestDelay, interruptible);
-		for (const char of searchQuery) {
+		await delay(300 + Math.random() * 500, interruptible);
+
+		// Type with more realistic human-like variation
+		for (let i = 0; i < searchQuery.length; i++) {
 			if (!config?.runtime?.running) {
 				logs &&
 					log(
@@ -1230,6 +1226,7 @@ async function query(interruptible = true) {
 					);
 				return false;
 			}
+			const char = searchQuery[i];
 			await race(
 				chrome.debugger.sendCommand({ tabId }, "Input.insertText", {
 					text: char,
@@ -1237,7 +1234,21 @@ async function query(interruptible = true) {
 				shortestDelay,
 				`Failed to insert text for tab ${tabId} within timeout.`,
 			);
-			await delay(80 + Math.random() * 120, interruptible);
+
+			// More realistic typing speed with occasional pauses
+			let charDelay = 60 + Math.random() * 140;
+
+			// Occasionally pause longer (thinking/reading)
+			if (Math.random() < 0.15) {
+				charDelay += 200 + Math.random() * 300;
+			}
+
+			// Slow down at word boundaries
+			if (char === ' ') {
+				charDelay += 50 + Math.random() * 100;
+			}
+
+			await delay(charDelay, interruptible);
 		}
 		logs && log(`[QUERY] - Search query typed: ${searchQuery}`, "update");
 		await delay(shortestDelay, interruptible);
@@ -1364,7 +1375,31 @@ async function perform(interruptible = true) {
 		logs && log(`[PERFORM] - Navigating to search URL: ${searchUrl}`, "update");
 		await chrome.tabs.update(tabId, { url: searchUrl });
 		await wait(tabId);
-		await delay(shortestDelay * 2, interruptible);
+
+		// Wait for page to fully load and tracking scripts to fire
+		await delay(2000 + Math.random() * 1000, interruptible);
+
+		// Simulate human behavior: scroll down a bit to "read" results
+		try {
+			await enableDomains(tabId);
+			const scrollScript = `
+				window.scrollTo({
+					top: ${200 + Math.floor(Math.random() * 300)},
+					behavior: 'smooth'
+				});
+			`;
+			await race(
+				chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+					expression: scrollScript,
+					allowUnsafeEvalBlockedByCSP: true,
+				}),
+				shortestDelay,
+			);
+			logs && log(`[PERFORM] - Simulated reading results with scroll`, "update");
+			await delay(800 + Math.random() * 1200, interruptible);
+		} catch (scrollError) {
+			logs && log(`[PERFORM] - Could not scroll (non-critical): ${scrollError.message}`, "warning");
+		}
 
 		const newUrl = await getTabUrl(tabId);
 		if (newUrl && newUrl !== originalUrl && newUrl.includes('/search?q=')) {
@@ -1471,12 +1506,7 @@ async function search(searches, min, max, interruptible = true) {
 			await click(interruptible);
 			await delay(shortestDelay, interruptible);
 		}
-		
-		// Add more randomization to delays
-		const baseDelay = Math.floor(Math.random() * (max * 1000 - min * 1000 + 1)) + min * 1000;
-		const profileVariation = profileId ? parseInt(profileId.slice(-2), 16) % 1000 : 0;
-		const randomDelay = baseDelay + profileVariation;
-		
+
 		if (clearIt && i < 3) {
 			await chrome.tabs.update(tabId, {
 				active: true,
@@ -1485,15 +1515,26 @@ async function search(searches, min, max, interruptible = true) {
 			await click(interruptible);
 			await delay(shortestDelay, interruptible);
 		}
+
+		logs && log(`[SEARCH] Starting search ${i + 1} of ${searches}...`, "update");
+
+		// Type the query with realistic timing
 		const queried = await query(interruptible);
 		if (!queried) {
 			logs && log(`[SEARCH] Query failed for ${searchQuery}.`, "error");
 		}
-		await delay(randomDelay, interruptible);
+
+		// Wait a bit after typing before searching (human-like behavior)
+		const typingPauseDelay = 500 + Math.random() * 1500;
+		logs && log(`[SEARCH] Pausing ${Math.round(typingPauseDelay)}ms after typing...`, "update");
+		await delay(typingPauseDelay, interruptible);
+
 		const stored = await get();
 		if (stored) {
 			Object.assign(config, stored);
 		}
+
+		// Perform the search
 		const searched = await perform(interruptible);
 		if (!searched) {
 			await chrome.tabs.update(tabId, {
@@ -1519,6 +1560,7 @@ async function search(searches, min, max, interruptible = true) {
 					"success",
 				);
 		}
+
 		await set(config);
 		await chrome.action.setBadgeText({
 			text:
@@ -1528,12 +1570,20 @@ async function search(searches, min, max, interruptible = true) {
 						100,
 				) + "%",
 		});
-		if (i === searches - 1) {
-			logs && log("[SEARCH] Waiting for final delay...", "update");
+
+		// Wait the configured time BETWEEN searches (not before the first search)
+		if (i < searches - 1) {
+			// Calculate proper delay based on min/max settings (convert seconds to milliseconds)
+			const minMs = min * 1000;
+			const maxMs = max * 1000;
+			const range = maxMs - minMs;
+			const randomDelay = minMs + Math.floor(Math.random() * (range + 1));
+
+			const delaySeconds = (randomDelay / 1000).toFixed(1);
+			logs && log(`[SEARCH] Waiting ${delaySeconds}s before next search (min: ${min}s, max: ${max}s)...`, "update");
 			await delay(randomDelay, interruptible);
 		} else {
-			logs && log("[SEARCH] Waiting for longer delay...", "update");
-			await delay(mediumDelay + profileVariation, interruptible);
+			logs && log("[SEARCH] All searches completed, no delay needed.", "success");
 		}
 	}
 	await chrome.tabs.update(tabId, {
