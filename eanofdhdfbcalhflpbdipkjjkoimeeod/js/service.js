@@ -1357,27 +1357,27 @@ async function perform(interruptible = true) {
 	const originalUrl = await getTabUrl(tabId);
 	logs && log("[PERFORM] Starting perform operation...", "update");
 	try {
-		await enableDomains(tabId);
-		await delay(shortestDelay, interruptible);
-		await chrome.tabs.sendMessage(tabId, {
-			action: "perform",
-			query: searchQuery,
-		});
-		logs && log(`[PERFORM] - Search query sent: ${searchQuery}`, "update");
+		// Force full page navigation instead of form submit to ensure rewards tracking
+		const encodedQuery = encodeURIComponent(searchQuery);
+		const searchUrl = `https://www.bing.com/search?q=${encodedQuery}&form=QBLH&sp=-1&lq=0&pq=&sc=0-0&qs=n&sk=&cvid=${generateCVID()}`;
+
+		logs && log(`[PERFORM] - Navigating to search URL: ${searchUrl}`, "update");
+		await chrome.tabs.update(tabId, { url: searchUrl });
 		await wait(tabId);
-		await delay(shortestDelay, interruptible);
+		await delay(shortestDelay * 2, interruptible);
+
 		const newUrl = await getTabUrl(tabId);
-		if (newUrl && newUrl !== originalUrl) {
+		if (newUrl && newUrl !== originalUrl && newUrl.includes('/search?q=')) {
 			logs &&
 				log(
-					`[PERFORM] - Search performed. URL changed from ${originalUrl} to ${newUrl}`,
+					`[PERFORM] - Search performed via URL navigation. New URL: ${newUrl}`,
 					"success",
 				);
 			return true;
 		} else {
 			logs &&
 				log(
-					`[PERFORM] - Search failed and URL did not change: ${originalUrl}`,
+					`[PERFORM] - Search failed, URL did not change properly: ${newUrl}`,
 					"error",
 				);
 			return false;
@@ -1389,6 +1389,16 @@ async function perform(interruptible = true) {
 		);
 		return false;
 	}
+}
+
+function generateCVID() {
+	// Generate a random CVID (Client Version ID) similar to Bing's format
+	const chars = '0123456789ABCDEF';
+	let cvid = '';
+	for (let i = 0; i < 32; i++) {
+		cvid += chars[Math.floor(Math.random() * chars.length)];
+	}
+	return cvid;
 }
 
 async function search(searches, min, max, interruptible = true) {
